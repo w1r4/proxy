@@ -1,0 +1,54 @@
+# Dockerfile for cross-compiling Trojan for Alpine Linux
+# This provides an alternative to using the dockcross scripts
+
+# Stage 1: Build environment
+FROM alpine:latest AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    cmake \
+    boost-dev \
+    openssl-dev \
+    git \
+    linux-headers
+
+# Copy source code
+COPY . /src
+WORKDIR /src
+
+# Configure and build
+RUN mkdir -p build && \
+    cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DENABLE_MYSQL=OFF \
+        -DSYSTEMD_SERVICE=OFF && \
+    make -j$(nproc) && \
+    strip trojan
+
+# Stage 2: Create minimal runtime image
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    libstdc++ \
+    boost-system \
+    boost-program_options \
+    openssl
+
+# Copy the compiled binary
+COPY --from=builder /src/build/trojan /usr/local/bin/trojan
+
+# Copy example configurations
+COPY examples /etc/trojan/examples
+
+# Create directory for config
+RUN mkdir -p /etc/trojan
+
+# Set working directory
+WORKDIR /etc/trojan
+
+# Command to run
+ENTRYPOINT ["/usr/local/bin/trojan"]
+CMD ["-c", "/etc/trojan/config.json"]
